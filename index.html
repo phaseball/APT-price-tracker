@@ -301,7 +301,7 @@ textarea { min-height: 120px; resize: vertical; white-space: pre; }
 
 const CFG_KEY = 'apt_cfg_v1';
 const CACHE_KEY = 'apt_cache_v1';
-const BUILD_DATE = '2026-04-22j';
+const BUILD_DATE = '2026-04-22k';
 let CFG = { sheetId:'', saKey:null };
 let ACCESS_TOKEN = null;
 let TOKEN_EXP = 0;
@@ -953,6 +953,21 @@ function makeChart(canvasId, datasets, yLabel, yTickFmt) {
   const ctx = document.getElementById(canvasId).getContext('2d');
   const xLog = $('#xLog').checked;
   const yLog = $('#yLog').checked;
+
+  // Log scale can't plot y <= 0. Strip such points; keep idxData aligned.
+  if (yLog) {
+    for (const ds of datasets) {
+      const keepIdx = [];
+      ds.data = ds.data.filter((p, i) => {
+        const keep = p && p.y > 0;
+        if (keep) keepIdx.push(i);
+        return keep;
+      });
+      if (Array.isArray(ds.idxData)) {
+        ds.idxData = keepIdx.map(i => ds.idxData[i]);
+      }
+    }
+  }
 
   const xScale = xLog ? {
     type: 'logarithmic',
