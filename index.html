@@ -57,7 +57,10 @@ body { font-family: var(--sans); background: var(--bg); color: var(--txt); min-h
 label.lbl { display:block; font-size: 11px; color: var(--dim); margin-bottom: 4px; font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.5px; }
 input[type="text"], input[type="number"], textarea {
   width: 100%; padding: 8px 10px; background: var(--bg); border: 1px solid var(--bdr); border-radius: 6px; color: var(--txt); font-family: var(--mono); font-size: 12px; margin-bottom: 10px;
+  -moz-appearance: textfield;
 }
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 input[type="text"]:focus, textarea:focus, input[type="number"]:focus { outline: none; border-color: var(--blue); }
 textarea { min-height: 120px; resize: vertical; white-space: pre; }
 
@@ -174,27 +177,31 @@ textarea { min-height: 120px; resize: vertical; white-space: pre; }
       <div class="row">
         <div>
           <label class="lbl">시작 연도</label>
-          <input type="number" id="yStart" value="2008" step="1">
+          <input type="text" inputmode="numeric" pattern="[0-9]*" id="yStart" value="2008">
         </div>
         <div>
           <label class="lbl">종료 연도</label>
-          <input type="number" id="yEnd" value="2030" step="1">
+          <input type="text" inputmode="numeric" pattern="[0-9]*" id="yEnd" value="2030">
+        </div>
+        <div>
+          <label class="lbl">평수 (0=단가)</label>
+          <input type="text" inputmode="decimal" id="pyeong" value="0" placeholder="예: 34">
         </div>
       </div>
       <div class="flex gap4 mt6" style="flex-wrap:wrap;">
         <label class="reg-chk" style="max-width:none;"><input type="checkbox" id="xLog"> <span>X 로그</span></label>
-        <label class="reg-chk" style="max-width:none;"><input type="checkbox" id="yLog"> <span>Y 로그</span></label>
+        <label class="reg-chk" style="max-width:none;"><input type="checkbox" id="yLog" checked> <span>Y 로그</span></label>
       </div>
       <div class="small mt6" id="yRange"></div>
     </div>
 
     <div id="chartHolder">
       <div class="chart-box">
-        <div class="chart-title">매매 가격 (만원/m²) <span class="small" id="hintMag"></span></div>
+        <div class="chart-title">매매 가격 <span class="small" id="hintMag"></span></div>
         <div class="chart-wrap"><canvas id="c1"></canvas></div>
       </div>
       <div class="chart-box">
-        <div class="chart-title">전세 가격 (만원/m²) <span class="small">· * 표시 지역은 지수 값</span></div>
+        <div class="chart-title">전세 가격 <span class="small">· * 표시 지역은 지수 값</span></div>
         <div class="chart-wrap"><canvas id="c2"></canvas></div>
       </div>
       <div class="chart-box">
@@ -287,7 +294,7 @@ textarea { min-height: 120px; resize: vertical; white-space: pre; }
 
 const CFG_KEY = 'apt_cfg_v1';
 const CACHE_KEY = 'apt_cache_v1';
-const BUILD_DATE = '2026-04-22b';
+const BUILD_DATE = '2026-04-22d';
 let CFG = { sheetId:'', saKey:null };
 let ACCESS_TOKEN = null;
 let TOKEN_EXP = 0;
@@ -887,6 +894,7 @@ function makeChart(canvasId, datasets, yLabel, yTickFmt) {
       maintainAspectRatio: false,
       animation: false,
       parsing: false,
+      layout: { padding: { right: 28 } },
       interaction: { intersect: false, mode: 'index' },
       plugins: {
         legend: {
@@ -898,7 +906,13 @@ function makeChart(canvasId, datasets, yLabel, yTickFmt) {
             title: (items) => items[0] ? items[0].parsed.x ? new Date(items[0].parsed.x).toISOString().slice(0,10) : '' : '',
             label: (item) => {
               const v = item.parsed.y;
-              return `${item.dataset.label}: ${yTickFmt ? yTickFmt(v) : v.toFixed(2)}`;
+              const txt = yTickFmt ? yTickFmt(v) : v.toFixed(2);
+              const idxArr = item.dataset.idxData;
+              if (idxArr && idxArr[item.dataIndex] != null) {
+                const iv = idxArr[item.dataIndex];
+                return `${item.dataset.label}: ${txt} (${iv.toFixed(1)})`;
+              }
+              return `${item.dataset.label}: ${txt}`;
             }
           }
         }
@@ -927,6 +941,26 @@ function buildSeries(tabKey, region, yStart, yEnd) {
     pts.push({ x: tms, y: v });
   }
   return pts;
+}
+
+// Build an index array parallel to buildSeries(priceKey) — same filtering rules,
+// same length. Used for tooltip to show "price (idx)".
+function buildIndexParallel(idxKey, priceKey, region, yStart, yEnd) {
+  const priceD = DATA[priceKey]; const idxD = DATA[idxKey];
+  if (!priceD || !priceD.data[region] || !idxD || !idxD.data[region]) return [];
+  const out = [];
+  const priceVals = priceD.data[region];
+  const idxVals = idxD.data[region];
+  // Both share the same dates array (idx is the basis for price)
+  for (let i = 0; i < priceD.dates.length; i++) {
+    const dt = priceD.dates[i];
+    const v = priceVals[i];
+    if (v === null || v === undefined) continue;
+    const y = parseInt(dt.slice(0,4));
+    if (y < yStart || y > yEnd) continue;
+    out.push(idxVals[i]);
+  }
+  return out;
 }
 
 function buildRatioSeries(region, yStart, yEnd) {
@@ -982,25 +1016,28 @@ function drawCharts() {
     const r = sel[i];
     const color = COLORS[i % COLORS.length];
     // 매매: prefer 실가격; if not available, fall back to 지수
-    let magPts, magLabel;
+    let magPts, magLabel, magIdx = [];
     if (DATA['매매실가격'] && DATA['매매실가격'].data[r]) {
       magPts = buildSeries('매매실가격', r, effStart, effEnd);
       magLabel = r;
+      // Parallel index series for tooltip
+      magIdx = buildIndexParallel('매매지수', '매매실가격', r, effStart, effEnd);
     } else if (DATA['매매지수'] && DATA['매매지수'].data[r]) {
       magPts = buildSeries('매매지수', r, effStart, effEnd);
       magLabel = r + '(지수)';
     } else { magPts = []; magLabel = r; }
-    ds1.push({ label: magLabel, data: magPts, borderColor: color, backgroundColor: color, pointBackgroundColor: color });
+    ds1.push({ label: magLabel, data: magPts, idxData: magIdx, borderColor: color, backgroundColor: color, pointBackgroundColor: color });
 
-    let jeoPts, jeoLabel;
+    let jeoPts, jeoLabel, jeoIdx = [];
     if (DATA['전세실가격'] && DATA['전세실가격'].data[r]) {
       jeoPts = buildSeries('전세실가격', r, effStart, effEnd);
       jeoLabel = r;
+      jeoIdx = buildIndexParallel('전세지수', '전세실가격', r, effStart, effEnd);
     } else if (DATA['전세지수'] && DATA['전세지수'].data[r]) {
       jeoPts = buildSeries('전세지수', r, effStart, effEnd);
       jeoLabel = r + '(지수)';
     } else { jeoPts = []; jeoLabel = r; }
-    ds2.push({ label: jeoLabel, data: jeoPts, borderColor: color, backgroundColor: color, pointBackgroundColor: color });
+    ds2.push({ label: jeoLabel, data: jeoPts, idxData: jeoIdx, borderColor: color, backgroundColor: color, pointBackgroundColor: color });
 
     const ratPts = buildRatioSeries(r, effStart, effEnd);
     ds3.push({ label: r, data: ratPts, borderColor: color, backgroundColor: color, pointBackgroundColor: color });
@@ -1013,12 +1050,33 @@ function drawCharts() {
   ds2.sort(byLastDesc);
   ds3.sort(byLastDesc);
 
-  // m²당 prices (만원/m²) are typically 100-5000
-  const fmtM2 = v => v.toFixed(0);
+  // 평수: if >0, convert 만원/m² to total 만원 (then show in 억 for readability)
+  const pyeong = parseFloat($('#pyeong').value) || 0;
+  const M2_PER_PY = 3.3058;
+  let yLabel, fmtPrice, titleSuffix;
+  if (pyeong > 0) {
+    const k = pyeong * M2_PER_PY;
+    for (const ds of [...ds1, ...ds2]) {
+      ds.data = ds.data.map(p => ({ x: p.x, y: p.y * k / 10000 })); // 억
+    }
+    yLabel = '억 (만원)';
+    fmtPrice = v => v.toFixed(1);
+    titleSuffix = ` · ${pyeong}평 총가 (억)`;
+  } else {
+    yLabel = '만원/m²';
+    fmtPrice = v => v.toFixed(0);
+    titleSuffix = ' (만원/m²)';
+  }
   const fmtRatio = v => v.toFixed(2);
 
-  makeChart('c1', ds1, '만원/m²', fmtM2);
-  makeChart('c2', ds2, '만원/m²', fmtM2);
+  // Update chart titles with 평수 context
+  const t1 = document.querySelector('#chartHolder .chart-box:nth-child(1) .chart-title');
+  const t2 = document.querySelector('#chartHolder .chart-box:nth-child(2) .chart-title');
+  if (t1) t1.firstChild.nodeValue = `매매 가격${titleSuffix} `;
+  if (t2) t2.firstChild.nodeValue = `전세 가격${titleSuffix} `;
+
+  makeChart('c1', ds1, yLabel, fmtPrice);
+  makeChart('c2', ds2, yLabel, fmtPrice);
   makeChart('c3', ds3, '매매/전세 비율', fmtRatio);
 }
 
@@ -1235,8 +1293,18 @@ function scheduleRedraw() {
   }, 120);
 }
 
-['#yStart', '#yEnd', '#xLog', '#yLog'].forEach(sel => {
-  const el = $(sel); if (el) el.addEventListener('input', scheduleRedraw);
+// Auto-redraw wiring:
+//   - Text inputs (year, 평수): redraw on Enter key OR on blur (not on every keystroke)
+//   - Checkboxes (log scale): redraw on change
+['#yStart', '#yEnd', '#pyeong'].forEach(sel => {
+  const el = $(sel); if (!el) return;
+  el.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); el.blur(); scheduleRedraw(); }
+  });
+  el.addEventListener('change', scheduleRedraw); // fires on blur when value changed
+});
+['#xLog', '#yLog'].forEach(sel => {
+  const el = $(sel); if (el) el.addEventListener('change', scheduleRedraw);
 });
 
 $('#btnSelAll').onclick = () => {
