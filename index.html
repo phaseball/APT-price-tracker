@@ -213,6 +213,9 @@ textarea { min-height: 120px; resize: vertical; white-space: pre; }
         파일 종류는 자동 인식됩니다. 업로드하면 해당 탭 데이터를 덮어쓰고 실가격을 재계산합니다.<br>
         <span class="small hl">※ 아래 17개 추적 지역만 읽어서 저장합니다.</span>
       </p>
+      <div class="small mb10">
+        데이터 출처: <a href="https://data.kbland.kr/kbstats/wmh?tIdx=HT07&tsIdx=aptM2SaleAvgPrice" target="_blank" rel="noopener" style="color:var(--blue);">KB부동산 통계 (kbland.kr) ↗</a>
+      </div>
       <div class="fzone" id="fzone">
         <div>📁 파일 선택 / 드롭 (여러 개 가능)</div>
         <div class="hint">주간_아파트_매매가격지수_*.xlsx, 주간_아파트_전세가격지수_*.xlsx, 아파트_m²당_매매평균가격_*.xlsx, 아파트_m²당_전세평균가격_*.xlsx</div>
@@ -284,7 +287,7 @@ textarea { min-height: 120px; resize: vertical; white-space: pre; }
 
 const CFG_KEY = 'apt_cfg_v1';
 const CACHE_KEY = 'apt_cache_v1';
-const BUILD_DATE = '2026-04-22';
+const BUILD_DATE = '2026-04-22b';
 let CFG = { sheetId:'', saKey:null };
 let ACCESS_TOKEN = null;
 let TOKEN_EXP = 0;
@@ -309,14 +312,14 @@ let SEL_REGIONS = JSON.parse(localStorage.getItem(SEL_KEY) || '["전국","서울
 // Only these regions are read/stored. Order defines display order.
 const TRACKED_REGIONS = [
   '전국', '서울', '강남11개구',
-  '동작구', '관악구', '서초구', '강남구', '송파구', '성북구', '마포구', '영등포구',
+  '동작구', '관악구', '서초구', '강남구', '송파구', '성동구', '마포구', '영등포구',
   '성남시 분당구', '고양시 일산서구', '과천시', '수원시 영통구', '하남시', '화성시'
 ];
 // Alias map: input-file region name → canonical tracked name
 // Used so user's shorthand "동작" matches file's "동작구"
 const REGION_ALIASES = {
   '동작': '동작구', '관악': '관악구', '서초': '서초구', '강남': '강남구',
-  '송파': '송파구', '성북': '성북구', '마포': '마포구', '영등포': '영등포구',
+  '송파': '송파구', '성동': '성동구', '마포': '마포구', '영등포': '영등포구',
 };
 function canonicalRegion(name) {
   name = String(name).trim();
