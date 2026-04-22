@@ -138,7 +138,8 @@ textarea { min-height: 120px; resize: vertical; white-space: pre; }
 <div class="hdr">
   <div class="hdr-row">
     <div>
-      <div class="title">아파트<span class="em">.</span>가격</div>
+      <div class="title">APT<span class="em">.</span>tracker</div>
+      <div class="small" id="metaLine">build: - · data: -</div>
       <div class="status" id="st">설정 확인 중...</div>
     </div>
     <div style="display:flex;gap:6px;">
@@ -169,7 +170,7 @@ textarea { min-height: 120px; resize: vertical; white-space: pre; }
     </div>
 
     <div class="card">
-      <h3 style="margin-bottom:8px">기간</h3>
+      <h3 style="margin-bottom:8px">기간 / 스케일</h3>
       <div class="row">
         <div>
           <label class="lbl">시작 연도</label>
@@ -179,9 +180,10 @@ textarea { min-height: 120px; resize: vertical; white-space: pre; }
           <label class="lbl">종료 연도</label>
           <input type="number" id="yEnd" value="2030" step="1">
         </div>
-        <div style="flex:0 0 auto;">
-          <button class="btn pri" id="btnDraw">그리기</button>
-        </div>
+      </div>
+      <div class="flex gap4 mt6" style="flex-wrap:wrap;">
+        <label class="reg-chk" style="max-width:none;"><input type="checkbox" id="xLog"> <span>X 로그</span></label>
+        <label class="reg-chk" style="max-width:none;"><input type="checkbox" id="yLog"> <span>Y 로그</span></label>
       </div>
       <div class="small mt6" id="yRange"></div>
     </div>
@@ -282,6 +284,7 @@ textarea { min-height: 120px; resize: vertical; white-space: pre; }
 
 const CFG_KEY = 'apt_cfg_v1';
 const CACHE_KEY = 'apt_cache_v1';
+const BUILD_DATE = '2026-04-22';
 let CFG = { sheetId:'', saKey:null };
 let ACCESS_TOKEN = null;
 let TOKEN_EXP = 0;
@@ -346,6 +349,20 @@ function log(msg, kind='') {
 function setStatus(msg, kind='') {
   $('#st').textContent = msg;
   $('#st').className = 'status ' + kind;
+}
+
+function updateMetaLine() {
+  // Find the latest date across weekly + monthly data
+  let latest = null;
+  for (const k of ['매매지수','전세지수','매매가격','전세가격']) {
+    const d = DATA[k];
+    if (!d || !d.dates || d.dates.length === 0) continue;
+    const last = d.dates[d.dates.length - 1];
+    if (!latest || last > latest) latest = last;
+  }
+  const dataPart = latest || '-';
+  const el = $('#metaLine');
+  if (el) el.textContent = `build: ${BUILD_DATE} · data: ${dataPart}`;
 }
 
 function ymdFromDate(d) {
@@ -720,31 +737,36 @@ function saveCache() {
 /* ==================== RENDERING ==================== */
 function updateSummary() {
   const row = $('#statRow');
-  row.innerHTML = '';
-  const entries = [
-    ['매매지수', '주간'], ['전세지수', '주간'],
-    ['매매가격', '월간'], ['전세가격', '월간'],
-    ['매매실가격', '파생'], ['전세실가격', '파생']
-  ];
-  for (const [k, kind] of entries) {
-    const d = DATA[k];
-    const chip = document.createElement('span');
-    chip.className = 'stat-chip';
-    if (d) {
-      const n = d.dates.length;
-      const r = d.regions.length;
-      const last = n > 0 ? d.dates[n-1] : '-';
-      chip.innerHTML = `<b>${k}</b> ${r}지역 × ${n}(${kind}) 최신:${last}`;
-    } else {
-      chip.innerHTML = `<b>${k}</b> <span style="color:#ff5252">-</span>`;
+  if (row) {
+    row.innerHTML = '';
+    const entries = [
+      ['매매지수', '주간'], ['전세지수', '주간'],
+      ['매매가격', '월간'], ['전세가격', '월간'],
+      ['매매실가격', '파생'], ['전세실가격', '파생']
+    ];
+    for (const [k, kind] of entries) {
+      const d = DATA[k];
+      const chip = document.createElement('span');
+      chip.className = 'stat-chip';
+      if (d) {
+        const n = d.dates.length;
+        const r = d.regions.length;
+        const last = n > 0 ? d.dates[n-1] : '-';
+        chip.innerHTML = `<b>${k}</b> ${r}지역 × ${n}(${kind}) 최신:${last}`;
+      } else {
+        chip.innerHTML = `<b>${k}</b> <span style="color:#ff5252">-</span>`;
+      }
+      row.appendChild(chip);
     }
-    row.appendChild(chip);
   }
   // Pivot info
   const pi = [];
   if (PIVOTS['매매지수']) pi.push(`매매지수 pivot: <b class="hl">${PIVOTS['매매지수'].date}</b> (${PIVOTS['매매지수'].count}개 지역 = 100)`);
   if (PIVOTS['전세지수']) pi.push(`전세지수 pivot: <b class="hl">${PIVOTS['전세지수'].date}</b> (${PIVOTS['전세지수'].count}개 지역 = 100)`);
-  $('#pivotInfo').innerHTML = pi.join('<br>');
+  const piEl = $('#pivotInfo');
+  if (piEl) piEl.innerHTML = pi.join('<br>');
+  // Always update the meta line
+  updateMetaLine();
 }
 
 function renderRegionGrid() {
@@ -781,6 +803,7 @@ function renderRegionGrid() {
       else { SEL_REGIONS = SEL_REGIONS.filter(x => x !== r); wrap.classList.remove('on'); }
       localStorage.setItem(SEL_KEY, JSON.stringify(SEL_REGIONS));
       $('#regCnt').textContent = `${SEL_REGIONS.length}개 선택`;
+      scheduleRedraw();
     };
     const sp = document.createElement('span');
     sp.textContent = hasPrice ? r : r + '*';
@@ -829,6 +852,30 @@ function destroyChart(id) {
 function makeChart(canvasId, datasets, yLabel, yTickFmt) {
   destroyChart(canvasId);
   const ctx = document.getElementById(canvasId).getContext('2d');
+  const xLog = $('#xLog').checked;
+  const yLog = $('#yLog').checked;
+
+  const xScale = xLog ? {
+    type: 'logarithmic',
+    ticks: {
+      color: '#5a6e8a', font: { family: 'JetBrains Mono', size: 10 },
+      callback: v => new Date(v).getFullYear()
+    },
+    grid: { color: '#1a2338' }
+  } : {
+    type: 'time',
+    time: { unit: 'year', displayFormats: { year: 'yyyy' } },
+    ticks: { color: '#5a6e8a', font: { family: 'JetBrains Mono', size: 10 } },
+    grid: { color: '#1a2338' }
+  };
+
+  const yScale = {
+    type: yLog ? 'logarithmic' : 'linear',
+    ticks: { color: '#5a6e8a', font: { family: 'JetBrains Mono', size: 10 }, callback: yTickFmt || (v => v) },
+    grid: { color: '#1a2338' },
+    title: { display: !!yLabel, text: yLabel || '', color: '#5a6e8a', font: { family: 'JetBrains Mono', size: 10 } }
+  };
+
   chartInstances[canvasId] = new Chart(ctx, {
     type: 'line',
     data: { datasets },
@@ -853,19 +900,7 @@ function makeChart(canvasId, datasets, yLabel, yTickFmt) {
           }
         }
       },
-      scales: {
-        x: {
-          type: 'time',
-          time: { unit: 'year', displayFormats: { year: 'yyyy' } },
-          ticks: { color: '#5a6e8a', font: { family: 'JetBrains Mono', size: 10 } },
-          grid: { color: '#1a2338' }
-        },
-        y: {
-          ticks: { color: '#5a6e8a', font: { family: 'JetBrains Mono', size: 10 }, callback: yTickFmt || (v => v) },
-          grid: { color: '#1a2338' },
-          title: { display: !!yLabel, text: yLabel || '', color: '#5a6e8a', font: { family: 'JetBrains Mono', size: 10 } }
-        }
-      },
+      scales: { x: xScale, y: yScale },
       elements: { point: { radius: 0, hoverRadius: 4 }, line: { borderWidth: 1.4, tension: 0 } }
     }
   });
@@ -934,17 +969,17 @@ function drawCharts() {
 
   if (SEL_REGIONS.length === 0) {
     destroyChart('c1'); destroyChart('c2'); destroyChart('c3');
-    toast('지역을 선택하세요');
     return;
   }
 
   const ds1 = [], ds2 = [], ds3 = [];
   const sel = SEL_REGIONS.slice();
+  // Color stays fixed per region by position in SEL_REGIONS (not legend order)
   for (let i = 0; i < sel.length; i++) {
     const r = sel[i];
     const color = COLORS[i % COLORS.length];
     // 매매: prefer 실가격; if not available, fall back to 지수
-    let magPts, magLabel, magY;
+    let magPts, magLabel;
     if (DATA['매매실가격'] && DATA['매매실가격'].data[r]) {
       magPts = buildSeries('매매실가격', r, effStart, effEnd);
       magLabel = r;
@@ -967,6 +1002,13 @@ function drawCharts() {
     const ratPts = buildRatioSeries(r, effStart, effEnd);
     ds3.push({ label: r, data: ratPts, borderColor: color, backgroundColor: color, pointBackgroundColor: color });
   }
+
+  // Sort legend by the latest value descending (colors stay tied to data via borderColor)
+  const lastY = ds => ds.data.length ? ds.data[ds.data.length - 1].y : -Infinity;
+  const byLastDesc = (a, b) => lastY(b) - lastY(a);
+  ds1.sort(byLastDesc);
+  ds2.sort(byLastDesc);
+  ds3.sort(byLastDesc);
 
   // m²당 prices (만원/m²) are typically 100-5000
   const fmtM2 = v => v.toFixed(0);
@@ -1179,7 +1221,20 @@ $('#btnInitSheet').onclick = async () => {
 
 $('#btnReload').onclick = () => loadFromSheet();
 
-$('#btnDraw').onclick = drawCharts;
+// Debounced auto-redraw
+let _redrawT = null;
+function scheduleRedraw() {
+  clearTimeout(_redrawT);
+  _redrawT = setTimeout(() => {
+    if (document.querySelector('.tab.on')?.dataset.tab === 'chart') {
+      try { drawCharts(); } catch(e) { console.error(e); }
+    }
+  }, 120);
+}
+
+['#yStart', '#yEnd', '#xLog', '#yLog'].forEach(sel => {
+  const el = $(sel); if (el) el.addEventListener('input', scheduleRedraw);
+});
 
 $('#btnSelAll').onclick = () => {
   const available = new Set();
@@ -1190,11 +1245,13 @@ $('#btnSelAll').onclick = () => {
   SEL_REGIONS = TRACKED_REGIONS.filter(r => available.has(r));
   localStorage.setItem(SEL_KEY, JSON.stringify(SEL_REGIONS));
   renderRegionGrid();
+  scheduleRedraw();
 };
 $('#btnClearReg').onclick = () => {
   SEL_REGIONS = [];
   localStorage.setItem(SEL_KEY, JSON.stringify(SEL_REGIONS));
   renderRegionGrid();
+  scheduleRedraw();
 };
 
 $('#btnRebuild').onclick = async () => {
