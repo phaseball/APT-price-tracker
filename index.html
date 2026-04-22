@@ -294,7 +294,7 @@ textarea { min-height: 120px; resize: vertical; white-space: pre; }
 
 const CFG_KEY = 'apt_cfg_v1';
 const CACHE_KEY = 'apt_cache_v1';
-const BUILD_DATE = '2026-04-22f';
+const BUILD_DATE = '2026-04-22g';
 let CFG = { sheetId:'', saKey:null };
 let ACCESS_TOKEN = null;
 let TOKEN_EXP = 0;
@@ -1060,9 +1060,9 @@ function drawCharts() {
     for (const ds of [...ds1, ...ds2]) {
       ds.data = ds.data.map(p => ({ x: p.x, y: p.y * k / 10000 })); // 억
     }
-    yLabel = '억 (만원)';
-    fmtPrice = v => v.toFixed(1);
-    titleSuffix = ` · ${pyeong}평 총가 (억)`;
+    yLabel = '억';
+    fmtPrice = v => v.toFixed(1) + '억';
+    titleSuffix = ` · ${pyeong}평 총가`;
   } else {
     yLabel = '만원/m²';
     fmtPrice = v => v.toFixed(0);
