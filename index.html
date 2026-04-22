@@ -294,7 +294,7 @@ textarea { min-height: 120px; resize: vertical; white-space: pre; }
 
 const CFG_KEY = 'apt_cfg_v1';
 const CACHE_KEY = 'apt_cache_v1';
-const BUILD_DATE = '2026-04-22d';
+const BUILD_DATE = '2026-04-22e';
 let CFG = { sheetId:'', saKey:null };
 let ACCESS_TOKEN = null;
 let TOKEN_EXP = 0;
@@ -910,7 +910,8 @@ function makeChart(canvasId, datasets, yLabel, yTickFmt) {
               const idxArr = item.dataset.idxData;
               if (idxArr && idxArr[item.dataIndex] != null) {
                 const iv = idxArr[item.dataIndex];
-                return `${item.dataset.label}: ${txt} (${iv.toFixed(1)})`;
+                // Extra spaces between price and index, "%" after idx
+                return `${item.dataset.label}: ${txt}    (${iv.toFixed(0)}%)`;
               }
               return `${item.dataset.label}: ${txt}`;
             }
@@ -1360,10 +1361,15 @@ function init() {
   renderRegionGrid();
   updateYearRange();
 
+  // Chart tab is the default on page open; draw immediately from cache if any
+  scheduleRedraw();
+
   if (CFG.sheetId && CFG.saKey) {
     setStatus('Sheet에서 로드 중... (백그라운드)', '');
     // Defer Sheet load so UI is responsive immediately
-    setTimeout(() => loadFromSheet().catch(e => {
+    setTimeout(() => loadFromSheet().then(() => {
+      scheduleRedraw(); // re-draw after fresh data arrives
+    }).catch(e => {
       setStatus('Sheet 로드 실패: ' + e.message, 'err');
     }), 100);
   } else {
