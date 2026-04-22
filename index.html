@@ -1,0 +1,1236 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>아파트 가격 추적기</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-adapter-date-fns/3.0.0/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsrsasign@11.1.0/lib/jsrsasign-all-min.js"></script>
+<style>
+:root {
+  --bg: #0a0e17;
+  --bg2: #131a2b;
+  --bg3: #1a2338;
+  --bdr: #243049;
+  --dim: #5a6e8a;
+  --txt: #e8edf5;
+  --grn: #00e676;
+  --red: #ff5252;
+  --blue: #448aff;
+  --amber: #ffc107;
+  --purple: #b39ddb;
+  --mono: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+  --sans: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: var(--sans); background: var(--bg); color: var(--txt); min-height: 100vh; -webkit-font-smoothing: antialiased; font-size: 13px; }
+#app { max-width: 920px; margin: 0 auto; padding-bottom: 80px; }
+
+/* Header */
+.hdr { padding: 16px 14px 12px; border-bottom: 1px solid var(--bg2); position: sticky; top:0; background: var(--bg); z-index:10; }
+.hdr-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.title { font-size: 18px; font-weight: 700; letter-spacing: -0.3px; font-family: var(--mono); }
+.title .em { color: var(--blue); }
+.status { font-size: 11px; color: var(--dim); margin-top: 4px; font-family: var(--mono); }
+.status.ok { color: var(--grn); }
+.status.err { color: var(--red); }
+
+/* Tabs */
+.tabs { display: flex; gap: 4px; margin-top: 10px; }
+.tab { flex:1; padding: 7px 4px; font-size: 12px; color: var(--dim); background: transparent; border: 1px solid var(--bdr); border-radius: 6px; cursor: pointer; font-family: var(--mono); font-weight: 500; transition: all .15s; }
+.tab.on { background: var(--bg3); color: var(--txt); border-color: var(--blue); }
+
+/* Content */
+.content { padding: 14px; }
+.card { background: var(--bg2); border: 1px solid var(--bdr); border-radius: 10px; padding: 14px; margin-bottom: 12px; }
+.card h3 { font-size: 13px; font-weight: 700; margin-bottom: 10px; font-family: var(--mono); color: var(--purple); }
+.card p { font-size: 12px; color: var(--dim); line-height: 1.5; margin-bottom: 8px; }
+
+/* Forms */
+label.lbl { display:block; font-size: 11px; color: var(--dim); margin-bottom: 4px; font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.5px; }
+input[type="text"], input[type="number"], textarea {
+  width: 100%; padding: 8px 10px; background: var(--bg); border: 1px solid var(--bdr); border-radius: 6px; color: var(--txt); font-family: var(--mono); font-size: 12px; margin-bottom: 10px;
+}
+input[type="text"]:focus, textarea:focus, input[type="number"]:focus { outline: none; border-color: var(--blue); }
+textarea { min-height: 120px; resize: vertical; white-space: pre; }
+
+/* Buttons */
+.btn { padding: 8px 14px; font-size: 12px; font-weight: 600; color: var(--txt); background: var(--bdr); border: none; border-radius: 6px; cursor: pointer; font-family: var(--mono); transition: all .15s; }
+.btn:hover { background: var(--bg3); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn.pri { background: var(--blue); }
+.btn.pri:hover { background: #5a9dff; }
+.btn.grn { background: var(--grn); color: #000; }
+.btn.sm { padding: 5px 10px; font-size: 11px; }
+
+/* File upload */
+.fzone {
+  border: 2px dashed var(--bdr); border-radius: 10px; padding: 18px; text-align: center; cursor: pointer; transition: all .15s;
+  background: var(--bg); position: relative;
+}
+.fzone:hover, .fzone.drag { border-color: var(--blue); background: var(--bg3); }
+.fzone input[type=file] { position: absolute; inset:0; opacity:0; cursor: pointer; }
+.fzone .hint { font-size: 11px; color: var(--dim); margin-top: 6px; }
+
+/* Log */
+.log { font-family: var(--mono); font-size: 11px; max-height: 200px; overflow-y: auto; background: var(--bg); border: 1px solid var(--bdr); border-radius: 6px; padding: 8px; margin-top: 8px; }
+.log-line { padding: 2px 0; color: var(--dim); }
+.log-line.ok { color: var(--grn); }
+.log-line.err { color: var(--red); }
+.log-line.warn { color: var(--amber); }
+
+/* Region checkboxes */
+.reg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 4px; max-height: 320px; overflow-y: auto; padding: 8px; background: var(--bg); border: 1px solid var(--bdr); border-radius: 6px; }
+.reg-chk { display: flex; align-items: center; gap: 4px; font-size: 11px; cursor: pointer; padding: 3px 5px; border-radius: 4px; color: var(--dim); font-family: var(--mono); white-space: nowrap; overflow:hidden; text-overflow: ellipsis; }
+.reg-chk:hover { background: var(--bg3); }
+.reg-chk input { accent-color: var(--blue); margin: 0; flex-shrink: 0; }
+.reg-chk.on { color: var(--txt); }
+
+.row { display: flex; gap: 8px; align-items: end; flex-wrap: wrap; }
+.row > div { flex: 1; min-width: 80px; }
+
+/* Chart */
+.chart-box { background: var(--bg2); border: 1px solid var(--bdr); border-radius: 10px; padding: 12px 8px 8px; margin-bottom: 12px; }
+.chart-title { font-size: 12px; font-weight: 600; color: var(--purple); margin-bottom: 6px; padding-left: 6px; font-family: var(--mono); }
+.chart-wrap { position: relative; height: 280px; }
+
+/* Collapsible */
+.coll-hdr { cursor: pointer; user-select: none; display: flex; justify-content: space-between; align-items: center; }
+.coll-hdr::after { content: "▼"; font-size: 9px; color: var(--dim); transition: transform .15s; }
+.coll.closed .coll-hdr::after { transform: rotate(-90deg); }
+.coll.closed .coll-body { display: none; }
+
+/* Toast */
+.toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--bg3); color: var(--txt); padding: 8px 14px; border-radius: 6px; font-size: 12px; border: 1px solid var(--bdr); font-family: var(--mono); z-index: 100; opacity: 0; pointer-events: none; transition: opacity .2s; max-width: 90vw; text-align: center; }
+.toast.show { opacity: 1; }
+.toast.ok { border-color: var(--grn); }
+.toast.err { border-color: var(--red); }
+
+/* Summary stats */
+.stat-row { display: flex; gap: 8px; font-family: var(--mono); font-size: 11px; flex-wrap: wrap; }
+.stat-chip { background: var(--bg); padding: 4px 8px; border-radius: 4px; border: 1px solid var(--bdr); color: var(--dim); }
+.stat-chip b { color: var(--txt); font-weight: 600; }
+
+/* small helper */
+.small { font-size: 10px; color: var(--dim); font-family: var(--mono); }
+.hl { color: var(--amber); }
+.nowrap { white-space: nowrap; }
+.center { text-align: center; }
+.mt6 { margin-top: 6px; }
+.mt10 { margin-top: 10px; }
+.mb6 { margin-bottom: 6px; }
+.mb10 { margin-bottom: 10px; }
+.gap4 { gap: 4px; }
+.flex { display: flex; }
+.sp-btw { justify-content: space-between; align-items: center; }
+</style>
+</head>
+<body>
+<div id="app">
+
+<div class="hdr">
+  <div class="hdr-row">
+    <div>
+      <div class="title">아파트<span class="em">.</span>가격</div>
+      <div class="status" id="st">설정 확인 중...</div>
+    </div>
+    <div style="display:flex;gap:6px;">
+      <button class="btn sm" id="btnReload" title="Sheet에서 다시 로드">↻</button>
+    </div>
+  </div>
+  <div class="tabs">
+    <button class="tab on" data-tab="chart">차트</button>
+    <button class="tab" data-tab="data">데이터</button>
+    <button class="tab" data-tab="cfg">설정</button>
+  </div>
+</div>
+
+<div class="content">
+
+  <!-- CHART TAB -->
+  <div class="tp tp-chart">
+    <div class="card">
+      <div class="flex sp-btw mb10">
+        <h3 style="margin:0">지역 선택</h3>
+        <div class="flex gap4">
+          <button class="btn sm" id="btnSelAll">전체</button>
+          <button class="btn sm" id="btnClearReg">해제</button>
+        </div>
+      </div>
+      <div class="reg-grid" id="regGrid"></div>
+      <div class="small mt6" id="regCnt">0개 선택</div>
+    </div>
+
+    <div class="card">
+      <h3 style="margin-bottom:8px">기간</h3>
+      <div class="row">
+        <div>
+          <label class="lbl">시작 연도</label>
+          <input type="number" id="yStart" value="2008" step="1">
+        </div>
+        <div>
+          <label class="lbl">종료 연도</label>
+          <input type="number" id="yEnd" value="2030" step="1">
+        </div>
+        <div style="flex:0 0 auto;">
+          <button class="btn pri" id="btnDraw">그리기</button>
+        </div>
+      </div>
+      <div class="small mt6" id="yRange"></div>
+    </div>
+
+    <div id="chartHolder">
+      <div class="chart-box">
+        <div class="chart-title">매매 가격 (만원/m²) <span class="small" id="hintMag"></span></div>
+        <div class="chart-wrap"><canvas id="c1"></canvas></div>
+      </div>
+      <div class="chart-box">
+        <div class="chart-title">전세 가격 (만원/m²) <span class="small">· * 표시 지역은 지수 값</span></div>
+        <div class="chart-wrap"><canvas id="c2"></canvas></div>
+      </div>
+      <div class="chart-box">
+        <div class="chart-title">매매 / 전세 비율 <span class="small">· 실가격 있는 지역만</span></div>
+        <div class="chart-wrap"><canvas id="c3"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DATA TAB -->
+  <div class="tp tp-data" style="display:none;">
+    <div class="card">
+      <h3>파일 업로드</h3>
+      <p>
+        주간 매매/전세 가격지수 (주간) 또는 아파트 매매/전세 평균가격 (월간) xlsx 파일을 드래그 & 드롭 하거나 클릭해서 선택하세요.<br>
+        파일 종류는 자동 인식됩니다. 업로드하면 해당 탭 데이터를 덮어쓰고 실가격을 재계산합니다.<br>
+        <span class="small hl">※ 아래 17개 추적 지역만 읽어서 저장합니다.</span>
+      </p>
+      <div class="fzone" id="fzone">
+        <div>📁 파일 선택 / 드롭 (여러 개 가능)</div>
+        <div class="hint">주간_아파트_매매가격지수_*.xlsx, 주간_아파트_전세가격지수_*.xlsx, 아파트_m²당_매매평균가격_*.xlsx, 아파트_m²당_전세평균가격_*.xlsx</div>
+        <input type="file" accept=".xlsx,.xls" multiple id="fin">
+      </div>
+      <div class="log" id="uplog"></div>
+    </div>
+
+    <div class="card">
+      <h3>추적 지역 (17개)</h3>
+      <div class="small" id="trackedList"></div>
+    </div>
+
+    <div class="card">
+      <h3>현재 데이터 요약</h3>
+      <div class="stat-row" id="statRow"></div>
+      <div class="small mt10" id="pivotInfo"></div>
+    </div>
+  </div>
+
+  <!-- CONFIG TAB -->
+  <div class="tp tp-cfg" style="display:none;">
+    <div class="card">
+      <h3>Google Sheet 설정</h3>
+      <p>서비스 계정 JSON 키와 Sheet ID를 한 번 입력하면 브라우저에 저장됩니다 (이 기기에만).</p>
+      <label class="lbl">Google Sheet ID</label>
+      <input type="text" id="sheetId" placeholder="1a2B3c...">
+      <label class="lbl">Service Account JSON Key</label>
+      <textarea id="saKey" placeholder='{"type":"service_account","project_id":...}'></textarea>
+      <div class="flex gap4">
+        <button class="btn pri" id="btnSaveCfg">저장</button>
+        <button class="btn" id="btnTest">연결 테스트</button>
+        <button class="btn" id="btnInitSheet">Sheet 초기화</button>
+      </div>
+      <div class="small mt10" id="cfgMsg"></div>
+    </div>
+
+    <div class="card coll closed" id="helpCard">
+      <h3 class="coll-hdr">Google Sheet 준비 방법</h3>
+      <div class="coll-body">
+        <p>
+        <b>1.</b> 본인 구글 계정으로 새 Google Sheet 생성<br>
+        <b>2.</b> Google Cloud Console에서 새 프로젝트 → Sheets API 활성화<br>
+        <b>3.</b> IAM & Admin → Service Accounts → 새 계정 생성 → Keys → Add Key → JSON 다운로드<br>
+        <b>4.</b> JSON 파일의 <code>client_email</code> 값을 복사 후, 생성한 Sheet를 그 이메일로 공유 (편집자 권한)<br>
+        <b>5.</b> Sheet URL에서 Sheet ID (/d/ 뒤의 긴 문자열) 복사<br>
+        <b>6.</b> 위 양식에 JSON 전체와 Sheet ID 입력 → 저장 → 연결 테스트 → Sheet 초기화 (탭 생성)
+        </p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>데이터 관리</h3>
+      <button class="btn" id="btnDump">현재 데이터 xlsx로 내보내기</button>
+      <button class="btn" id="btnRebuild">실가격 재계산</button>
+    </div>
+  </div>
+
+</div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   아파트 가격 추적기 (Korea Apartment Price Tracker)
+   ============================================================ */
+
+const CFG_KEY = 'apt_cfg_v1';
+const CACHE_KEY = 'apt_cache_v1';
+let CFG = { sheetId:'', saKey:null };
+let ACCESS_TOKEN = null;
+let TOKEN_EXP = 0;
+
+// In-memory data (loaded from Sheet)
+// Each is { regions: [...], dates: ['YYYY-MM-DD', ...], data: { region: [v1, v2, ...] } }
+let DATA = {
+  '매매지수': null,
+  '전세지수': null,
+  '매매가격': null,
+  '전세가격': null,
+  '매매실가격': null,
+  '전세실가격': null,
+};
+let PIVOTS = { '매매지수': null, '전세지수': null };
+
+// Selected regions (persisted)
+const SEL_KEY = 'apt_sel_regions_v1';
+let SEL_REGIONS = JSON.parse(localStorage.getItem(SEL_KEY) || '["전국","서울","강남구","송파구","성남시 분당구"]');
+// Drop any stale entries not in tracked list (after filter change)
+SEL_REGIONS = SEL_REGIONS.filter(r => TRACKED_SET.has(r));
+
+/* ==================== TRACKED REGIONS ==================== */
+// Only these regions are read/stored. Order defines display order.
+const TRACKED_REGIONS = [
+  '전국', '서울', '강남11개구',
+  '동작구', '관악구', '서초구', '강남구', '송파구', '성북구', '마포구', '영등포구',
+  '성남시 분당구', '고양시 일산서구', '과천시', '수원시 영통구', '하남시', '화성시'
+];
+// Alias map: input-file region name → canonical tracked name
+// Used so user's shorthand "동작" matches file's "동작구"
+const REGION_ALIASES = {
+  '동작': '동작구', '관악': '관악구', '서초': '서초구', '강남': '강남구',
+  '송파': '송파구', '성북': '성북구', '마포': '마포구', '영등포': '영등포구',
+};
+function canonicalRegion(name) {
+  name = String(name).trim();
+  return REGION_ALIASES[name] || name;
+}
+const TRACKED_SET = new Set(TRACKED_REGIONS);
+
+/* ==================== UTILS ==================== */
+const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
+
+function toast(msg, kind='') {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.className = 'toast show ' + kind;
+  clearTimeout(toast._t);
+  toast._t = setTimeout(()=>t.classList.remove('show'), 2600);
+}
+function log(msg, kind='') {
+  const el = $('#uplog');
+  const d = document.createElement('div');
+  d.className = 'log-line ' + kind;
+  const ts = new Date().toLocaleTimeString('ko-KR',{hour12:false});
+  d.textContent = `[${ts}] ${msg}`;
+  el.appendChild(d);
+  el.scrollTop = el.scrollHeight;
+}
+function setStatus(msg, kind='') {
+  $('#st').textContent = msg;
+  $('#st').className = 'status ' + kind;
+}
+
+function ymdFromDate(d) {
+  if (d instanceof Date) {
+    const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), dd = String(d.getDate()).padStart(2,'0');
+    return `${y}-${m}-${dd}`;
+  }
+  if (typeof d === 'string') {
+    // try parse
+    const m = d.match(/(\d{4})[-\/\.](\d{1,2})[-\/\.](\d{1,2})/);
+    if (m) return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+  }
+  return String(d);
+}
+function ymFromDate(d) {
+  if (d instanceof Date) {
+    const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0');
+    return `${y}-${m}`;
+  }
+  if (typeof d === 'string') {
+    const m = d.match(/(\d{4})[-\/\.](\d{1,2})/);
+    if (m) return `${m[1]}-${m[2].padStart(2,'0')}`;
+  }
+  return String(d);
+}
+
+/* ==================== GOOGLE SHEET AUTH ==================== */
+async function getAccessToken() {
+  if (ACCESS_TOKEN && Date.now() < TOKEN_EXP - 60000) return ACCESS_TOKEN;
+  if (!CFG.saKey) throw new Error('Service Account Key 필요');
+
+  const header = { alg: 'RS256', typ: 'JWT' };
+  const now = Math.floor(Date.now()/1000);
+  const payload = {
+    iss: CFG.saKey.client_email,
+    scope: 'https://www.googleapis.com/auth/spreadsheets',
+    aud: 'https://oauth2.googleapis.com/token',
+    exp: now + 3600,
+    iat: now,
+  };
+
+  const sHeader = JSON.stringify(header);
+  const sPayload = JSON.stringify(payload);
+  const jwt = KJUR.jws.JWS.sign('RS256', sHeader, sPayload, CFG.saKey.private_key);
+
+  const resp = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`
+  });
+  if (!resp.ok) { const t = await resp.text(); throw new Error(`Auth 실패: ${resp.status} ${t}`); }
+  const j = await resp.json();
+  ACCESS_TOKEN = j.access_token;
+  TOKEN_EXP = Date.now() + (j.expires_in * 1000);
+  return ACCESS_TOKEN;
+}
+
+async function sheetsApi(path, opts={}) {
+  const token = await getAccessToken();
+  const resp = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${CFG.sheetId}${path}`, {
+    ...opts,
+    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json', ...(opts.headers||{}) },
+  });
+  if (!resp.ok) { const t = await resp.text(); throw new Error(`Sheet API 실패: ${resp.status} ${t}`); }
+  return resp.json();
+}
+
+async function sheetsGet(range) {
+  return sheetsApi(`/values/${encodeURIComponent(range)}`);
+}
+async function sheetsPut(range, values) {
+  return sheetsApi(`/values/${encodeURIComponent(range)}?valueInputOption=RAW`, {
+    method: 'PUT', body: JSON.stringify({ values })
+  });
+}
+async function sheetsClear(range) {
+  return sheetsApi(`/values/${encodeURIComponent(range)}:clear`, { method: 'POST' });
+}
+async function sheetsMeta() {
+  return sheetsApi('');
+}
+async function sheetsBatchUpdate(requests) {
+  return sheetsApi(':batchUpdate', { method: 'POST', body: JSON.stringify({ requests }) });
+}
+
+async function ensureTab(name) {
+  const meta = await sheetsMeta();
+  const existing = meta.sheets.map(s => s.properties.title);
+  if (!existing.includes(name)) {
+    await sheetsBatchUpdate([{ addSheet: { properties: { title: name } } }]);
+  }
+}
+
+async function initSheet() {
+  const tabs = ['매매지수', '전세지수', '매매가격', '전세가격', '매매실가격', '전세실가격', '설정'];
+  for (const t of tabs) {
+    await ensureTab(t);
+    log(`탭 '${t}' 확인/생성`, 'ok');
+  }
+  toast('Sheet 초기화 완료', 'ok');
+}
+
+/* ==================== XLSX PARSING ==================== */
+function parseXlsxFile(arrayBuffer) {
+  const wb = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: true });
+  return { sheetName: wb.SheetNames[0], rows };
+}
+
+function detectFileType(sheetName, rows) {
+  const sn = (sheetName || '').toLowerCase();
+  if (sn.includes('매매가격지수') || sn.includes('매매지수')) return '매매지수';
+  if (sn.includes('전세가격지수') || sn.includes('전세지수')) return '전세지수';
+  if (sn.includes('매매평균가격') || sn.includes('매매가격')) return '매매가격';
+  if (sn.includes('전세평균가격') || sn.includes('전세가격')) return '전세가격';
+
+  // Fallback: infer from data shape (number of rows)
+  const r = rows.length;
+  if (r > 100) return null; // can't distinguish 매매/전세 without name
+  return null;
+}
+
+function normalizeRows(rows, isWeekly) {
+  // Row 0: [null/'지역명', date1, date2, ...]
+  // Row 1+: [region, val1, val2, ...]
+  const header = rows[0];
+  const dates = [];
+  for (let i = 1; i < header.length; i++) {
+    const v = header[i];
+    if (!v) continue;
+    const ymd = isWeekly ? ymdFromDate(v) : ymFromDate(v);
+    dates.push(ymd);
+  }
+  // Truncate data to match date count
+  const nDates = dates.length;
+
+  // Build temp map from file to respect TRACKED_REGIONS order
+  const raw = {};
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    if (!row || !row[0]) continue;
+    const rawName = String(row[0]).trim();
+    if (!rawName || rawName === '지역명') continue;
+    const region = canonicalRegion(rawName);
+    if (!TRACKED_SET.has(region)) continue; // skip non-tracked regions
+    const vals = [];
+    for (let c = 1; c <= nDates; c++) {
+      let v = row[c];
+      if (v === null || v === undefined || v === '' || v === '-') {
+        vals.push(null);
+      } else {
+        const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/,/g,''));
+        vals.push(isFinite(n) ? n : null);
+      }
+    }
+    raw[region] = vals;
+  }
+  // Emit in TRACKED_REGIONS order
+  const regions = [];
+  const data = {};
+  for (const r of TRACKED_REGIONS) {
+    if (r in raw) { regions.push(r); data[r] = raw[r]; }
+  }
+  return { regions, dates, data };
+}
+
+/* ==================== PIVOT DETECTION ==================== */
+function findPivot(indexData) {
+  // indexData = { regions, dates, data: { region: [values...] } }
+  // Find the column (date index) where the most regions have value == 100 (within tolerance)
+  const tol = 0.01;
+  const { regions, dates, data } = indexData;
+  let best = { idx: -1, count: 0, date: null };
+  for (let i = 0; i < dates.length; i++) {
+    let cnt = 0;
+    for (const r of regions) {
+      const v = data[r][i];
+      if (v !== null && Math.abs(v - 100) < tol) cnt++;
+    }
+    if (cnt > best.count) best = { idx: i, count: cnt, date: dates[i] };
+  }
+  return best;
+}
+
+/* ==================== REAL PRICE COMPUTATION ==================== */
+function computeRealPrices(indexData, priceData) {
+  // For each region present in BOTH indexData and priceData:
+  // For each week w in indexData.dates:
+  //   Find month M = substring(0,7) of w
+  //   realPrice[w] = priceData[M] * index[w] / avg_index_in_M
+  // For weeks in months beyond priceData's last month, use the last-known monthly ratio
+  // For weeks before priceData's first month, use the first-known monthly ratio
+  // The ratio = priceData[M] / avg_index_in_M (all weeks of M that have index)
+
+  const { regions: idxRegions, dates: idxDates, data: idxData } = indexData;
+  const { regions: prRegions, dates: prDates, data: prData } = priceData;
+
+  const common = idxRegions.filter(r => prRegions.includes(r));
+  const result = { regions: common, dates: idxDates.slice(), data: {} };
+
+  // Map idx date → month
+  const idxMonthOf = idxDates.map(d => d.slice(0, 7));
+
+  // For each month, find indices of all weeks in idxDates within that month
+  const monthToWeekIdx = {};
+  for (let i = 0; i < idxDates.length; i++) {
+    const m = idxMonthOf[i];
+    if (!monthToWeekIdx[m]) monthToWeekIdx[m] = [];
+    monthToWeekIdx[m].push(i);
+  }
+
+  for (const r of common) {
+    const idxVals = idxData[r];
+    const prVals = prData[r];
+
+    // monthly avg of idx (only months with at least 1 non-null idx value)
+    const monthlyIdxAvg = {};
+    for (const m in monthToWeekIdx) {
+      let sum = 0, cnt = 0;
+      for (const wi of monthToWeekIdx[m]) {
+        if (idxVals[wi] !== null) { sum += idxVals[wi]; cnt++; }
+      }
+      if (cnt > 0) monthlyIdxAvg[m] = sum / cnt;
+    }
+
+    // Build ratio per month (price / monthly_idx_avg) when both exist
+    const ratioByMonth = {};
+    for (let i = 0; i < prDates.length; i++) {
+      const m = prDates[i];
+      const pv = prVals[i];
+      if (pv !== null && monthlyIdxAvg[m] && monthlyIdxAvg[m] > 0) {
+        ratioByMonth[m] = pv / monthlyIdxAvg[m];
+      }
+    }
+    // Sorted list of months with ratios
+    const rMonths = Object.keys(ratioByMonth).sort();
+    if (rMonths.length === 0) {
+      // No overlap → can't compute
+      result.data[r] = idxDates.map(_ => null);
+      continue;
+    }
+    const firstRMonth = rMonths[0];
+    const lastRMonth = rMonths[rMonths.length - 1];
+
+    const weekRealPrices = new Array(idxDates.length).fill(null);
+    for (let i = 0; i < idxDates.length; i++) {
+      const iv = idxVals[i];
+      if (iv === null) { weekRealPrices[i] = null; continue; }
+      const m = idxMonthOf[i];
+      let ratio;
+      if (m in ratioByMonth) ratio = ratioByMonth[m];
+      else if (m < firstRMonth) ratio = ratioByMonth[firstRMonth];
+      else if (m > lastRMonth) ratio = ratioByMonth[lastRMonth];
+      else {
+        // In between: find nearest prior month with ratio
+        let prior = null;
+        for (const rm of rMonths) {
+          if (rm <= m) prior = rm;
+          else break;
+        }
+        ratio = ratioByMonth[prior || firstRMonth];
+      }
+      weekRealPrices[i] = iv * ratio;
+    }
+    result.data[r] = weekRealPrices;
+  }
+
+  return result;
+}
+
+/* ==================== DATA ↔ SHEET I/O ==================== */
+function dataToValues(d) {
+  // d: { regions, dates, data }  →  2D array: [['지역명', ...dates], [r1, ...vals], ...]
+  if (!d || !d.regions || d.regions.length === 0) return [];
+  const out = [];
+  out.push(['지역명', ...d.dates]);
+  for (const r of d.regions) {
+    const vals = d.data[r] || [];
+    out.push([r, ...vals.map(v => v === null ? '' : v)]);
+  }
+  return out;
+}
+function valuesToData(vals) {
+  if (!vals || vals.length < 2) return null;
+  const header = vals[0];
+  const dates = header.slice(1).map(String);
+  const raw = {};
+  for (let r = 1; r < vals.length; r++) {
+    const row = vals[r];
+    if (!row || !row[0]) continue;
+    const region = canonicalRegion(String(row[0]).trim());
+    if (!region || !TRACKED_SET.has(region)) continue;
+    const arr = [];
+    for (let i = 1; i <= dates.length; i++) {
+      const v = row[i];
+      if (v === undefined || v === null || v === '') arr.push(null);
+      else {
+        const n = typeof v === 'number' ? v : parseFloat(v);
+        arr.push(isFinite(n) ? n : null);
+      }
+    }
+    raw[region] = arr;
+  }
+  const regions = [];
+  const data = {};
+  for (const r of TRACKED_REGIONS) {
+    if (r in raw) { regions.push(r); data[r] = raw[r]; }
+  }
+  return { regions, dates, data };
+}
+
+async function writeTab(tabName, d) {
+  if (!d) return;
+  const values = dataToValues(d);
+  // Clear & write
+  await sheetsClear(`${tabName}!A:ZZZ`);
+  if (values.length === 0) return;
+  // Write in chunks if too big — Sheets accepts up to a few MB per request, generally fine
+  const endCol = colLetter(values[0].length);
+  const range = `${tabName}!A1:${endCol}${values.length}`;
+  await sheetsPut(range, values);
+}
+function colLetter(n) {
+  // 1-based column number → letters
+  let s = '';
+  while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); }
+  return s;
+}
+
+async function readTab(tabName) {
+  try {
+    // Get sheet meta to find dimensions first
+    const resp = await sheetsGet(`${tabName}!A1:ZZZ`);
+    return valuesToData(resp.values || []);
+  } catch (e) {
+    return null;
+  }
+}
+
+/* ==================== CONFIG PERSISTENCE ==================== */
+function loadCfg() {
+  try {
+    const s = localStorage.getItem(CFG_KEY);
+    if (!s) return;
+    const o = JSON.parse(s);
+    CFG.sheetId = o.sheetId || '';
+    CFG.saKey = o.saKey || null;
+    $('#sheetId').value = CFG.sheetId;
+    $('#saKey').value = CFG.saKey ? JSON.stringify(CFG.saKey, null, 2) : '';
+  } catch(e) {}
+}
+function saveCfg() {
+  localStorage.setItem(CFG_KEY, JSON.stringify(CFG));
+}
+
+function loadCache() {
+  try {
+    const s = localStorage.getItem(CACHE_KEY);
+    if (!s) return;
+    const o = JSON.parse(s);
+    Object.assign(DATA, o.DATA || {});
+    Object.assign(PIVOTS, o.PIVOTS || {});
+  } catch(e) {}
+}
+function saveCache() {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ DATA, PIVOTS }));
+  } catch(e) { /* quota exceeded ok */ }
+}
+
+/* ==================== RENDERING ==================== */
+function updateSummary() {
+  const row = $('#statRow');
+  row.innerHTML = '';
+  const entries = [
+    ['매매지수', '주간'], ['전세지수', '주간'],
+    ['매매가격', '월간'], ['전세가격', '월간'],
+    ['매매실가격', '파생'], ['전세실가격', '파생']
+  ];
+  for (const [k, kind] of entries) {
+    const d = DATA[k];
+    const chip = document.createElement('span');
+    chip.className = 'stat-chip';
+    if (d) {
+      const n = d.dates.length;
+      const r = d.regions.length;
+      const last = n > 0 ? d.dates[n-1] : '-';
+      chip.innerHTML = `<b>${k}</b> ${r}지역 × ${n}(${kind}) 최신:${last}`;
+    } else {
+      chip.innerHTML = `<b>${k}</b> <span style="color:#ff5252">-</span>`;
+    }
+    row.appendChild(chip);
+  }
+  // Pivot info
+  const pi = [];
+  if (PIVOTS['매매지수']) pi.push(`매매지수 pivot: <b class="hl">${PIVOTS['매매지수'].date}</b> (${PIVOTS['매매지수'].count}개 지역 = 100)`);
+  if (PIVOTS['전세지수']) pi.push(`전세지수 pivot: <b class="hl">${PIVOTS['전세지수'].date}</b> (${PIVOTS['전세지수'].count}개 지역 = 100)`);
+  $('#pivotInfo').innerHTML = pi.join('<br>');
+}
+
+function renderRegionGrid() {
+  const grid = $('#regGrid');
+  grid.innerHTML = '';
+  // Only show regions that actually exist in loaded data (intersected with tracked list)
+  const available = new Set();
+  for (const k of ['매매지수', '전세지수', '매매실가격', '전세실가격']) {
+    const d = DATA[k];
+    if (d) d.regions.forEach(r => available.add(r));
+  }
+  if (available.size === 0) {
+    grid.innerHTML = '<div class="small" style="grid-column:1/-1; text-align:center; padding:12px;">데이터 로드 필요 → 데이터 탭에서 파일 업로드</div>';
+    $('#regCnt').textContent = '0개 선택';
+    $('#hintMag').textContent = '';
+    return;
+  }
+  // Priced regions (those with 실가격 computed)
+  const pricedMag = new Set((DATA['매매실가격']?.regions) || []);
+  const pricedJeo = new Set((DATA['전세실가격']?.regions) || []);
+
+  for (const r of TRACKED_REGIONS) {
+    if (!available.has(r)) continue;
+    const wrap = document.createElement('label');
+    wrap.className = 'reg-chk' + (SEL_REGIONS.includes(r) ? ' on' : '');
+    // Mark regions without 실가격 with a subtle indicator
+    const hasPrice = pricedMag.has(r);
+    wrap.title = hasPrice ? r : r + ' (지수만)';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = SEL_REGIONS.includes(r);
+    cb.onchange = () => {
+      if (cb.checked) { if (!SEL_REGIONS.includes(r)) SEL_REGIONS.push(r); wrap.classList.add('on'); }
+      else { SEL_REGIONS = SEL_REGIONS.filter(x => x !== r); wrap.classList.remove('on'); }
+      localStorage.setItem(SEL_KEY, JSON.stringify(SEL_REGIONS));
+      $('#regCnt').textContent = `${SEL_REGIONS.length}개 선택`;
+    };
+    const sp = document.createElement('span');
+    sp.textContent = hasPrice ? r : r + '*';
+    wrap.appendChild(cb); wrap.appendChild(sp);
+    grid.appendChild(wrap);
+  }
+  $('#regCnt').textContent = `${SEL_REGIONS.length}개 선택`;
+  // Hint only shows if any region lacks real price
+  const hasMissingPrice = TRACKED_REGIONS.some(r => available.has(r) && !pricedMag.has(r));
+  $('#hintMag').textContent = hasMissingPrice ? '* 실가격 없음 (지수만)' : '';
+}
+
+function updateYearRange() {
+  // Find earliest & latest dates across all index data
+  let minD = null, maxD = null;
+  for (const k of ['매매지수','전세지수']) {
+    const d = DATA[k];
+    if (!d || d.dates.length === 0) continue;
+    const f = d.dates[0], l = d.dates[d.dates.length-1];
+    if (!minD || f < minD) minD = f;
+    if (!maxD || l > maxD) maxD = l;
+  }
+  $('#yRange').textContent = minD && maxD ? `데이터 범위: ${minD} ~ ${maxD}` : '데이터 없음';
+}
+
+/* ==================== CHARTS ==================== */
+const COLORS = [
+  '#448aff','#00e676','#ff5252','#ffc107','#b39ddb',
+  '#4dd0e1','#ff80ab','#81c784','#ffb74d','#9575cd',
+  '#64b5f6','#aed581','#e57373','#ffd54f','#7986cb',
+  '#4db6ac','#f06292','#fff176','#a1887f','#90a4ae',
+  '#26a69a','#ec407a','#66bb6a','#7e57c2','#ef5350',
+];
+const chartInstances = {};
+
+function destroyChart(id) {
+  if (chartInstances[id]) { chartInstances[id].destroy(); chartInstances[id] = null; }
+}
+
+function makeChart(canvasId, datasets, yLabel, yTickFmt) {
+  destroyChart(canvasId);
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  chartInstances[canvasId] = new Chart(ctx, {
+    type: 'line',
+    data: { datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      parsing: false,
+      interaction: { intersect: false, mode: 'index' },
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: { color: '#e8edf5', font: { family: 'JetBrains Mono', size: 10 }, boxWidth: 10, padding: 6 }
+        },
+        tooltip: {
+          callbacks: {
+            title: (items) => items[0] ? items[0].parsed.x ? new Date(items[0].parsed.x).toISOString().slice(0,10) : '' : '',
+            label: (item) => {
+              const v = item.parsed.y;
+              return `${item.dataset.label}: ${yTickFmt ? yTickFmt(v) : v.toFixed(2)}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          type: 'time',
+          time: { unit: 'year', displayFormats: { year: 'yyyy' } },
+          ticks: { color: '#5a6e8a', font: { family: 'JetBrains Mono', size: 10 } },
+          grid: { color: '#1a2338' }
+        },
+        y: {
+          ticks: { color: '#5a6e8a', font: { family: 'JetBrains Mono', size: 10 }, callback: yTickFmt || (v => v) },
+          grid: { color: '#1a2338' },
+          title: { display: !!yLabel, text: yLabel || '', color: '#5a6e8a', font: { family: 'JetBrains Mono', size: 10 } }
+        }
+      },
+      elements: { point: { radius: 0, hoverRadius: 4 }, line: { borderWidth: 1.4, tension: 0 } }
+    }
+  });
+}
+
+function buildSeries(tabKey, region, yStart, yEnd) {
+  const d = DATA[tabKey];
+  if (!d || !d.data[region]) return [];
+  const pts = [];
+  const vals = d.data[region];
+  for (let i = 0; i < d.dates.length; i++) {
+    const dt = d.dates[i];
+    const v = vals[i];
+    if (v === null || v === undefined) continue;
+    const y = parseInt(dt.slice(0,4));
+    if (y < yStart || y > yEnd) continue;
+    // dt can be YYYY-MM-DD or YYYY-MM
+    let tms;
+    if (dt.length === 7) tms = new Date(dt + '-01').getTime();
+    else tms = new Date(dt).getTime();
+    pts.push({ x: tms, y: v });
+  }
+  return pts;
+}
+
+function buildRatioSeries(region, yStart, yEnd) {
+  // Ratio = 매매실가격 / 전세실가격 (per week), for regions with both
+  const m = DATA['매매실가격']; const j = DATA['전세실가격'];
+  if (!m || !j || !m.data[region] || !j.data[region]) return [];
+  // m.dates and j.dates are the same (both weekly, same span)
+  const dates = m.dates;
+  const mv = m.data[region], jv = j.data[region];
+  const pts = [];
+  for (let i = 0; i < dates.length; i++) {
+    const y = parseInt(dates[i].slice(0,4));
+    if (y < yStart || y > yEnd) continue;
+    const a = mv[i], b = jv[i];
+    if (a === null || b === null || !b) continue;
+    pts.push({ x: new Date(dates[i]).getTime(), y: a / b });
+  }
+  return pts;
+}
+
+function drawCharts() {
+  const yStart = parseInt($('#yStart').value) || 2008;
+  let yEnd = parseInt($('#yEnd').value) || 2030;
+  // Clamp yEnd
+  let maxY = 2026;
+  for (const k of ['매매지수','전세지수']) {
+    const d = DATA[k];
+    if (d && d.dates.length) {
+      const ly = parseInt(d.dates[d.dates.length-1].slice(0,4));
+      if (ly > maxY) maxY = ly;
+    }
+  }
+  let minY = 2030;
+  for (const k of ['매매지수','전세지수']) {
+    const d = DATA[k];
+    if (d && d.dates.length) {
+      const fy = parseInt(d.dates[0].slice(0,4));
+      if (fy < minY) minY = fy;
+    }
+  }
+  const effStart = Math.max(yStart, minY);
+  const effEnd = Math.min(yEnd, maxY);
+
+  if (SEL_REGIONS.length === 0) {
+    destroyChart('c1'); destroyChart('c2'); destroyChart('c3');
+    toast('지역을 선택하세요');
+    return;
+  }
+
+  const ds1 = [], ds2 = [], ds3 = [];
+  const sel = SEL_REGIONS.slice();
+  for (let i = 0; i < sel.length; i++) {
+    const r = sel[i];
+    const color = COLORS[i % COLORS.length];
+    // 매매: prefer 실가격; if not available, fall back to 지수
+    let magPts, magLabel, magY;
+    if (DATA['매매실가격'] && DATA['매매실가격'].data[r]) {
+      magPts = buildSeries('매매실가격', r, effStart, effEnd);
+      magLabel = r;
+    } else if (DATA['매매지수'] && DATA['매매지수'].data[r]) {
+      magPts = buildSeries('매매지수', r, effStart, effEnd);
+      magLabel = r + '(지수)';
+    } else { magPts = []; magLabel = r; }
+    ds1.push({ label: magLabel, data: magPts, borderColor: color, backgroundColor: color, pointBackgroundColor: color });
+
+    let jeoPts, jeoLabel;
+    if (DATA['전세실가격'] && DATA['전세실가격'].data[r]) {
+      jeoPts = buildSeries('전세실가격', r, effStart, effEnd);
+      jeoLabel = r;
+    } else if (DATA['전세지수'] && DATA['전세지수'].data[r]) {
+      jeoPts = buildSeries('전세지수', r, effStart, effEnd);
+      jeoLabel = r + '(지수)';
+    } else { jeoPts = []; jeoLabel = r; }
+    ds2.push({ label: jeoLabel, data: jeoPts, borderColor: color, backgroundColor: color, pointBackgroundColor: color });
+
+    const ratPts = buildRatioSeries(r, effStart, effEnd);
+    ds3.push({ label: r, data: ratPts, borderColor: color, backgroundColor: color, pointBackgroundColor: color });
+  }
+
+  // m²당 prices (만원/m²) are typically 100-5000
+  const fmtM2 = v => v.toFixed(0);
+  const fmtRatio = v => v.toFixed(2);
+
+  makeChart('c1', ds1, '만원/m²', fmtM2);
+  makeChart('c2', ds2, '만원/m²', fmtM2);
+  makeChart('c3', ds3, '매매/전세 비율', fmtRatio);
+}
+
+/* ==================== FILE UPLOAD HANDLING ==================== */
+async function handleFile(file) {
+  log(`'${file.name}' 읽는 중...`);
+  const buf = await file.arrayBuffer();
+  const { sheetName, rows } = parseXlsxFile(buf);
+  log(`시트: '${sheetName}', ${rows.length}행`);
+
+  // Try filename first, then sheet name
+  const fname = file.name.replace(/\.xlsx?$/i, '');
+  const type = detectFileType(fname, rows) || detectFileType(sheetName, rows);
+  if (!type) {
+    log(`파일 종류 자동 인식 실패 (시트명: ${sheetName})`, 'err');
+    toast('파일 종류를 인식할 수 없습니다. 파일명 또는 시트명을 확인하세요.', 'err');
+    return false;
+  }
+  log(`종류: ${type}`, 'ok');
+
+  const isWeekly = type.endsWith('지수');
+  const parsed = normalizeRows(rows, isWeekly);
+  log(`${parsed.regions.length}개 지역 × ${parsed.dates.length}개 기간`, 'ok');
+
+  // Unit heuristic for price files: m²당 values ~100-5000, total 만원 ~10000-200000
+  // Warn if the user uploaded the old "총 평균가격" instead of "m²당"
+  if (!isWeekly && parsed.regions.length > 0) {
+    const firstReg = parsed.regions[0];
+    const vals = parsed.data[firstReg] || [];
+    const lastValid = [...vals].reverse().find(v => v !== null);
+    if (lastValid !== undefined && lastValid > 10000) {
+      log(`⚠️  값이 ${lastValid.toFixed(0)} 만원 — m²당(~100-5000)이 아닌 총가격처럼 보임. 파일 단위를 확인하세요.`, 'warn');
+      if (!confirm(`이 파일의 가격 값이 m²당 단가가 아닌 총가격으로 보입니다 (${firstReg} 최근 값: ${lastValid.toFixed(0)} 만원).\n\n계속 진행하면 기존 m²당 데이터와 단위가 섞입니다. 계속할까요?`)) {
+        log('사용자가 취소함', 'warn');
+        return false;
+      }
+    }
+  }
+
+  DATA[type] = parsed;
+
+  if (isWeekly) {
+    const p = findPivot(parsed);
+    PIVOTS[type] = p;
+    log(`Pivot 감지: ${p.date} (${p.count}개 지역 = 100)`, 'ok');
+  }
+
+  // Recompute real prices if we have both 지수 and 가격 pairs
+  recomputeReal();
+
+  // Persist to Sheet
+  if (CFG.sheetId && CFG.saKey) {
+    log(`'${type}' 탭에 저장 중...`);
+    try {
+      await ensureTab(type);
+      await writeTab(type, parsed);
+      log(`'${type}' 저장 완료`, 'ok');
+
+      // Write real prices too if recomputed
+      if (isWeekly && type === '매매지수' && DATA['매매실가격']) {
+        await ensureTab('매매실가격');
+        await writeTab('매매실가격', DATA['매매실가격']);
+        log('매매실가격 저장 완료', 'ok');
+      }
+      if (isWeekly && type === '전세지수' && DATA['전세실가격']) {
+        await ensureTab('전세실가격');
+        await writeTab('전세실가격', DATA['전세실가격']);
+        log('전세실가격 저장 완료', 'ok');
+      }
+      if (!isWeekly && type === '매매가격' && DATA['매매실가격']) {
+        await ensureTab('매매실가격');
+        await writeTab('매매실가격', DATA['매매실가격']);
+        log('매매실가격 저장 완료', 'ok');
+      }
+      if (!isWeekly && type === '전세가격' && DATA['전세실가격']) {
+        await ensureTab('전세실가격');
+        await writeTab('전세실가격', DATA['전세실가격']);
+        log('전세실가격 저장 완료', 'ok');
+      }
+    } catch (e) {
+      log('Sheet 저장 실패: ' + e.message, 'err');
+      toast('Sheet 저장 실패', 'err');
+    }
+  } else {
+    log('Sheet 설정 안됨 - 브라우저 캐시에만 저장', 'warn');
+  }
+
+  saveCache();
+  updateSummary();
+  renderRegionGrid();
+  updateYearRange();
+  return true;
+}
+
+function recomputeReal() {
+  if (DATA['매매지수'] && DATA['매매가격']) {
+    DATA['매매실가격'] = computeRealPrices(DATA['매매지수'], DATA['매매가격']);
+    log(`매매실가격 재계산: ${DATA['매매실가격'].regions.length}개 지역`, 'ok');
+  }
+  if (DATA['전세지수'] && DATA['전세가격']) {
+    DATA['전세실가격'] = computeRealPrices(DATA['전세지수'], DATA['전세가격']);
+    log(`전세실가격 재계산: ${DATA['전세실가격'].regions.length}개 지역`, 'ok');
+  }
+}
+
+async function writeRealToSheet() {
+  if (!CFG.sheetId || !CFG.saKey) { toast('Sheet 설정 필요', 'err'); return; }
+  if (!DATA['매매실가격'] && !DATA['전세실가격']) { toast('실가격 데이터 없음', 'err'); return; }
+  try {
+    if (DATA['매매실가격']) { await ensureTab('매매실가격'); await writeTab('매매실가격', DATA['매매실가격']); log('매매실가격 저장', 'ok'); }
+    if (DATA['전세실가격']) { await ensureTab('전세실가격'); await writeTab('전세실가격', DATA['전세실가격']); log('전세실가격 저장', 'ok'); }
+    toast('실가격 저장 완료', 'ok');
+  } catch (e) {
+    log('저장 실패: ' + e.message, 'err');
+    toast('저장 실패: ' + e.message, 'err');
+  }
+}
+
+/* ==================== LOAD FROM SHEET ==================== */
+async function loadFromSheet() {
+  if (!CFG.sheetId || !CFG.saKey) { setStatus('Sheet 설정 필요 - 설정 탭에서 입력', 'err'); return; }
+  setStatus('Sheet에서 로드 중...', '');
+  try {
+    for (const k of ['매매지수','전세지수','매매가격','전세가격','매매실가격','전세실가격']) {
+      try {
+        const d = await readTab(k);
+        if (d && d.regions.length > 0) {
+          DATA[k] = d;
+          if (k.endsWith('지수')) PIVOTS[k] = findPivot(d);
+        }
+      } catch(e) {
+        // Tab might not exist
+      }
+    }
+    saveCache();
+    setStatus(`Sheet 로드 완료 (${new Date().toLocaleTimeString('ko-KR')})`, 'ok');
+    updateSummary();
+    renderRegionGrid();
+    updateYearRange();
+  } catch (e) {
+    setStatus('로드 실패: ' + e.message, 'err');
+    toast('로드 실패', 'err');
+  }
+}
+
+/* ==================== EVENTS ==================== */
+function switchTab(name) {
+  $$('.tab').forEach(t => t.classList.toggle('on', t.dataset.tab === name));
+  $$('.tp').forEach(el => { el.style.display = 'none'; });
+  const tp = document.querySelector('.tp-' + name);
+  if (tp) tp.style.display = '';
+  if (name === 'chart') drawCharts();
+}
+
+$$('.tab').forEach(t => t.onclick = () => switchTab(t.dataset.tab));
+
+$('#fin').onchange = async (e) => {
+  const files = Array.from(e.target.files || []);
+  for (const f of files) {
+    await handleFile(f);
+  }
+  e.target.value = '';
+};
+
+const fz = $('#fzone');
+['dragover','dragenter'].forEach(ev => fz.addEventListener(ev, e => { e.preventDefault(); fz.classList.add('drag'); }));
+['dragleave','drop'].forEach(ev => fz.addEventListener(ev, e => { e.preventDefault(); fz.classList.remove('drag'); }));
+fz.addEventListener('drop', async e => {
+  e.preventDefault(); fz.classList.remove('drag');
+  const files = Array.from(e.dataTransfer.files || []);
+  for (const f of files) await handleFile(f);
+});
+
+$('#btnSaveCfg').onclick = () => {
+  CFG.sheetId = $('#sheetId').value.trim();
+  const kt = $('#saKey').value.trim();
+  if (kt) {
+    try { CFG.saKey = JSON.parse(kt); } catch(e) { toast('JSON 파싱 실패: '+e.message, 'err'); return; }
+  } else CFG.saKey = null;
+  saveCfg();
+  toast('저장 완료', 'ok');
+  $('#cfgMsg').textContent = '저장됨. 연결 테스트를 눌러주세요.';
+};
+
+$('#btnTest').onclick = async () => {
+  $('#cfgMsg').textContent = '테스트 중...';
+  try {
+    CFG.sheetId = $('#sheetId').value.trim();
+    try { CFG.saKey = JSON.parse($('#saKey').value.trim()); } catch(e) { throw new Error('JSON 파싱 실패'); }
+    saveCfg();
+    const m = await sheetsMeta();
+    $('#cfgMsg').innerHTML = `<span style="color:var(--grn)">✓ 연결 성공</span><br>시트명: ${m.properties.title}<br>탭: ${m.sheets.map(s=>s.properties.title).join(', ')}`;
+    toast('연결 성공', 'ok');
+  } catch (e) {
+    $('#cfgMsg').innerHTML = `<span style="color:var(--red)">✗ 실패: ${e.message}</span>`;
+    toast('연결 실패', 'err');
+  }
+};
+
+$('#btnInitSheet').onclick = async () => {
+  try { await initSheet(); } catch (e) { toast('초기화 실패: '+e.message, 'err'); }
+};
+
+$('#btnReload').onclick = () => loadFromSheet();
+
+$('#btnDraw').onclick = drawCharts;
+
+$('#btnSelAll').onclick = () => {
+  const available = new Set();
+  for (const k of ['매매지수', '전세지수']) {
+    const d = DATA[k];
+    if (d) d.regions.forEach(r => available.add(r));
+  }
+  SEL_REGIONS = TRACKED_REGIONS.filter(r => available.has(r));
+  localStorage.setItem(SEL_KEY, JSON.stringify(SEL_REGIONS));
+  renderRegionGrid();
+};
+$('#btnClearReg').onclick = () => {
+  SEL_REGIONS = [];
+  localStorage.setItem(SEL_KEY, JSON.stringify(SEL_REGIONS));
+  renderRegionGrid();
+};
+
+$('#btnRebuild').onclick = async () => {
+  recomputeReal();
+  saveCache();
+  updateSummary();
+  if (CFG.sheetId && CFG.saKey) await writeRealToSheet();
+  else toast('재계산 완료 (캐시)', 'ok');
+};
+
+$('#btnDump').onclick = () => {
+  const wb = XLSX.utils.book_new();
+  for (const k of ['매매지수','전세지수','매매가격','전세가격','매매실가격','전세실가격']) {
+    const d = DATA[k];
+    if (!d) continue;
+    const values = dataToValues(d);
+    const ws = XLSX.utils.aoa_to_sheet(values);
+    XLSX.utils.book_append_sheet(wb, ws, k);
+  }
+  XLSX.writeFile(wb, `아파트_가격_${new Date().toISOString().slice(0,10)}.xlsx`);
+};
+
+// Collapsible help
+$('#helpCard .coll-hdr').onclick = () => $('#helpCard').classList.toggle('closed');
+
+/* ==================== STARTUP ==================== */
+(async function init() {
+  // Fill tracked list
+  const tl = $('#trackedList');
+  if (tl) tl.innerHTML = TRACKED_REGIONS.map(r => `<span class="stat-chip" style="display:inline-block;margin:2px;">${r}</span>`).join('');
+
+  loadCfg();
+  loadCache();
+  updateSummary();
+  renderRegionGrid();
+  updateYearRange();
+  if (CFG.sheetId && CFG.saKey) {
+    // Auto-load from Sheet
+    await loadFromSheet();
+  } else {
+    setStatus('설정 탭에서 Sheet 연결 필요', 'err');
+  }
+})();
+</script>
+</body>
+</html>
