@@ -301,7 +301,7 @@ textarea { min-height: 120px; resize: vertical; white-space: pre; }
 
 const CFG_KEY = 'apt_cfg_v1';
 const CACHE_KEY = 'apt_cache_v1';
-const BUILD_DATE = '2026-04-22k';
+const BUILD_DATE = '2026-04-22l';
 let CFG = { sheetId:'', saKey:null };
 let ACCESS_TOKEN = null;
 let TOKEN_EXP = 0;
@@ -784,6 +784,41 @@ async function writeTab(tabName, d) {
   const range = `${tabName}!A1:${endCol}${values.length}`;
   await sheetsPut(range, values);
 }
+
+// Merge a newly-parsed dataset into an existing one.
+// - Keeps all existing dates AND adds any new dates from `incoming`
+// - For overlapping dates, NEW values overwrite old (latest upload wins)
+// - For overlapping regions, missing values in either side are preserved
+// - Returns a fresh combined dataset
+function mergeData(existing, incoming) {
+  if (!existing) return incoming;
+  if (!incoming) return existing;
+  // Union of dates, sorted ascending
+  const dateSet = new Set([...existing.dates, ...incoming.dates]);
+  const dates = [...dateSet].sort();
+  // Union of regions, preserve TRACKED_REGIONS order
+  const regSet = new Set([...existing.regions, ...incoming.regions]);
+  const regions = TRACKED_REGIONS.filter(r => regSet.has(r));
+  // Index lookups for old/new dates
+  const exMap = {}; existing.dates.forEach((d, i) => exMap[d] = i);
+  const inMap = {}; incoming.dates.forEach((d, i) => inMap[d] = i);
+  const data = {};
+  for (const r of regions) {
+    const exVals = existing.data[r] || [];
+    const inVals = incoming.data[r] || [];
+    const arr = new Array(dates.length).fill(null);
+    for (let j = 0; j < dates.length; j++) {
+      const dt = dates[j];
+      // Latest upload wins on overlap; otherwise fall back to existing
+      let v = null;
+      if (dt in inMap) v = inVals[inMap[dt]];
+      if (v === null && dt in exMap) v = exVals[exMap[dt]];
+      arr[j] = v;
+    }
+    data[r] = arr;
+  }
+  return { regions, dates, data };
+}
 function colLetter(n) {
   // 1-based column number → letters
   let s = '';
@@ -1232,10 +1267,20 @@ async function handleFile(file) {
     }
   }
 
-  DATA[type] = parsed;
+  // Merge with existing data (date-keyed). Latest upload wins on overlap.
+  // For 실가격 derivation we use the merged version, so any new month re-anchors prior weeks too.
+  const before = DATA[type];
+  const merged = mergeData(before, parsed);
+  DATA[type] = merged;
+  // Quick stats for the log
+  const beforeN = before ? before.dates.length : 0;
+  const afterN = merged.dates.length;
+  const newN = afterN - beforeN;
+  const updN = parsed.dates.filter(d => before && before.dates.includes(d)).length;
+  log(`병합: 기존 ${beforeN} → 신규 ${afterN} (추가 ${newN}건, 업데이트 ${updN}건)`, 'ok');
 
   if (isWeekly) {
-    const p = findPivot(parsed);
+    const p = findPivot(merged);
     PIVOTS[type] = p;
     log(`Pivot 감지: ${p.date} (${p.count}개 지역 = 100)`, 'ok');
   }
@@ -1243,15 +1288,15 @@ async function handleFile(file) {
   // Recompute real prices if we have both 지수 and 가격 pairs
   if (!isTxn) recomputeReal();
 
-  // Persist to Sheet
+  // Persist to Sheet (write merged, not just parsed)
   if (CFG.sheetId && CFG.saKey) {
     log(`'${type}' 탭에 저장 중...`);
     try {
       await ensureTab(type);
-      await writeTab(type, parsed);
+      await writeTab(type, merged);
       log(`'${type}' 저장 완료`, 'ok');
 
-      // Write real prices too if recomputed
+      // Write real prices too if recomputed (always merged in DATA)
       if (isWeekly && type === '매매지수' && DATA['매매실가격']) {
         await ensureTab('매매실가격');
         await writeTab('매매실가격', DATA['매매실가격']);
