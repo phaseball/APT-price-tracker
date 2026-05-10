@@ -184,8 +184,8 @@ textarea { min-height: 120px; resize: vertical; white-space: pre; }
           <input type="text" inputmode="numeric" pattern="[0-9]*" id="yEnd" value="2030">
         </div>
         <div>
-          <label class="lbl">평수 (0=단가)</label>
-          <input type="text" inputmode="decimal" id="pyeong" value="32" placeholder="예: 34">
+          <label class="lbl">m² (0=단가)</label>
+          <input type="text" inputmode="decimal" id="pyeong" value="84" placeholder="예: 84">
         </div>
       </div>
       <div class="flex gap4 mt6" style="flex-wrap:wrap;">
@@ -301,7 +301,7 @@ textarea { min-height: 120px; resize: vertical; white-space: pre; }
 
 const CFG_KEY = 'apt_cfg_v1';
 const CACHE_KEY = 'apt_cache_v1';
-const BUILD_DATE = '2026-04-22l';
+const BUILD_DATE = '2026-04-22m';
 let CFG = { sheetId:'', saKey:null };
 let ACCESS_TOKEN = null;
 let TOKEN_EXP = 0;
@@ -1197,18 +1197,19 @@ function drawCharts() {
   ds3.sort(byLastDesc);
   ds4.sort(byLastDesc);
 
-  // 평수: if >0, convert 만원/m² to total 만원 (then show in 억 for readability)
-  const pyeong = parseFloat($('#pyeong').value) || 0;
-  const M2_PER_PY = 3.3058;
+  // m²: if >0, convert 만원/m² to total 만원 for that area, then show in 억
+  const m2 = parseFloat($('#pyeong').value) || 0;
   let yLabel, fmtPrice, titleSuffix;
-  if (pyeong > 0) {
-    const k = pyeong * M2_PER_PY;
+  if (m2 > 0) {
     for (const ds of [...ds1, ...ds2]) {
-      ds.data = ds.data.map(p => ({ x: p.x, y: p.y * k / 10000 })); // 억
+      ds.data = ds.data.map(p => ({ x: p.x, y: p.y * m2 / 10000 })); // 억
     }
     yLabel = '억';
     fmtPrice = v => v.toFixed(1) + '억';
-    titleSuffix = ` · ${pyeong}평 총가`;
+    // Show both m² and rough 평 equivalent in title (1평 ≈ 3.3058 m²)
+    const py = (m2 / 3.3058);
+    const pyStr = (py >= 10 ? py.toFixed(0) : py.toFixed(1)) + '평';
+    titleSuffix = ` · ${m2}m² (${pyStr}) 총가`;
   } else {
     yLabel = '만원/m²';
     fmtPrice = v => v.toFixed(0);
