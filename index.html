@@ -220,15 +220,20 @@ textarea { min-height: 120px; resize: vertical; white-space: pre; }
     <div class="card">
       <h3>파일 업로드</h3>
       <p>
-        주간 매매/전세 가격지수, 아파트 매매/전세 m²당 평균가격, 또는 아파트매매거래현황 xlsx 파일을 드래그 & 드롭 하거나 클릭해서 선택하세요.<br>
-        파일 종류는 자동 인식됩니다. 업로드하면 해당 탭 데이터를 덮어쓰고 실가격을 재계산합니다.<br>
-        <span class="small hl">※ 아래 17개 추적 지역만 읽어서 저장합니다.</span>
+        다음 xlsx 파일을 드래그 & 드롭 하거나 클릭해서 선택하세요. 파일 종류는 자동 인식됩니다.<br>
+        <span class="small" style="color:var(--dim);">업로드하면 기존 날짜는 유지하고 새 날짜는 추가됩니다 (병합).</span>
       </p>
+      <div class="small mb10" style="line-height:1.8;">
+        <span class="hl">[주간 업데이트]</span> 매매가격지수, 전세가격지수<br>
+        <span class="hl">[월간 업데이트]</span> m²당 매매평균가격, m²당 전세평균가격, 아파트매매거래현황
+      </div>
       <div class="small mb10">
-        데이터 출처: <a href="https://data.kbland.kr/kbstats/wmh?tIdx=HT07&tsIdx=aptM2SaleAvgPrice" target="_blank" rel="noopener" style="color:var(--blue);">KB부동산 통계 ↗</a>
+        데이터 출처:
+        <a href="https://data.kbland.kr/kbstats/wmh?tIdx=HT07&tsIdx=aptM2SaleAvgPrice" target="_blank" rel="noopener" style="color:var(--blue);">KB부동산 통계 ↗</a>
         &nbsp;·&nbsp;
         <a href="https://www.reb.or.kr/r-one/portal/stat/easyStatPage/A_2024_00554.do?isMobileYn=N" target="_blank" rel="noopener" style="color:var(--blue);">R-ONE 거래현황 ↗</a>
         <br><span class="small" style="color:var(--dim);">R-ONE 파일명: <code>월별_행정구역별_아파트매매거래현황.xlsx</code></span>
+        <br><span class="small hl">※ 아래 17개 추적 지역만 읽어서 저장합니다.</span>
       </div>
       <div class="fzone" id="fzone">
         <div>📁 파일 선택 / 드롭 (여러 개 가능)</div>
@@ -301,7 +306,7 @@ textarea { min-height: 120px; resize: vertical; white-space: pre; }
 
 const CFG_KEY = 'apt_cfg_v1';
 const CACHE_KEY = 'apt_cache_v1';
-const BUILD_DATE = '2026-04-22m';
+const BUILD_DATE = '2026-04-22n';
 let CFG = { sheetId:'', saKey:null };
 let ACCESS_TOKEN = null;
 let TOKEN_EXP = 0;
@@ -875,7 +880,6 @@ function updateSummary() {
     const entries = [
       ['매매지수', '주간'], ['전세지수', '주간'],
       ['매매가격', '월간'], ['전세가격', '월간'],
-      ['매매실가격', '파생'], ['전세실가격', '파생'],
       ['거래건수', '월간']
     ];
     for (const [k, kind] of entries) {
@@ -1050,7 +1054,7 @@ function makeChart(canvasId, datasets, yLabel, yTickFmt) {
               if (idxArr && idxArr[item.dataIndex] != null) {
                 const iv = idxArr[item.dataIndex];
                 // Extra spaces between price and index, "%" after idx
-                return `${item.dataset.label}: ${txt}    (${iv.toFixed(0)}%)`;
+                return `${item.dataset.label}: ${txt}    (${iv.toFixed(1)}%)`;
               }
               return `${item.dataset.label}: ${txt}`;
             }
