@@ -142,7 +142,7 @@ textarea { min-height: 120px; resize: vertical; white-space: pre; }
   <div class="hdr-row">
     <div>
       <div class="title">APT<span class="em">.</span>tracker</div>
-      <div class="small" id="metaLine">build: - · data: -</div>
+      <div class="small" id="metaLine">- · data: -</div>
       <div class="status" id="st">설정 확인 중...</div>
     </div>
     <div style="display:flex;gap:6px;">
@@ -306,7 +306,7 @@ textarea { min-height: 120px; resize: vertical; white-space: pre; }
 
 const CFG_KEY = 'apt_cfg_v1';
 const CACHE_KEY = 'apt_cache_v1';
-const BUILD_DATE = '2026-04-22n';
+const BUILD_DATE = 'html-260515-05:18:13';
 let CFG = { sheetId:'', saKey:null };
 let ACCESS_TOKEN = null;
 let TOKEN_EXP = 0;
@@ -385,7 +385,7 @@ function updateMetaLine() {
   }
   const dataPart = latest || '-';
   const el = $('#metaLine');
-  if (el) el.textContent = `build: ${BUILD_DATE} · data: ${dataPart}`;
+  if (el) el.textContent = `${BUILD_DATE} · data: ${dataPart}`;
 }
 
 function ymdFromDate(d) {
