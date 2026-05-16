@@ -191,6 +191,7 @@ textarea { min-height: 120px; resize: vertical; white-space: pre; }
       <div class="flex gap4 mt6" style="flex-wrap:wrap;">
         <label class="reg-chk" style="max-width:none;"><input type="checkbox" id="xLog"> <span>X 로그</span></label>
         <label class="reg-chk" style="max-width:none;"><input type="checkbox" id="yLog" checked> <span>Y 로그</span></label>
+        <label class="reg-chk" style="max-width:none;"><input type="checkbox" id="reBase100"> <span>시작=100</span></label>
       </div>
       <div class="small mt6" id="yRange"></div>
     </div>
@@ -306,7 +307,7 @@ textarea { min-height: 120px; resize: vertical; white-space: pre; }
 
 const CFG_KEY = 'apt_cfg_v1';
 const CACHE_KEY = 'apt_cache_v1';
-const BUILD_DATE = 'html-260515-05:18:13';
+const BUILD_DATE = 'html-260516-01:13:19';
 let CFG = { sheetId:'', saKey:null };
 let ACCESS_TOKEN = null;
 let TOKEN_EXP = 0;
@@ -1201,26 +1202,46 @@ function drawCharts() {
   ds3.sort(byLastDesc);
   ds4.sort(byLastDesc);
 
+  const reBase = $('#reBase100').checked;
+  // Rebase each dataset: y → y / firstY * 100. Uses the FIRST point of each series
+  // (which already respects the user's start year). If a series has no first point, skip.
+  function rebase100(datasets) {
+    for (const ds of datasets) {
+      if (!ds.data || ds.data.length === 0) continue;
+      const base = ds.data[0].y;
+      if (!base || !isFinite(base) || base === 0) continue;
+      ds.data = ds.data.map(p => ({ x: p.x, y: p.y / base * 100 }));
+    }
+  }
+
   // m²: if >0, convert 만원/m² to total 만원 for that area, then show in 억
+  // BUT if rebase is on, the unit becomes "% of start" — m² conversion is moot.
   const m2 = parseFloat($('#pyeong').value) || 0;
   let yLabel, fmtPrice, titleSuffix;
-  if (m2 > 0) {
+  if (reBase) {
+    rebase100(ds1); rebase100(ds2); rebase100(ds3); rebase100(ds4);
+    // Re-sort by latest value descending now that scales have shifted
+    ds1.sort(byLastDesc); ds2.sort(byLastDesc); ds3.sort(byLastDesc); ds4.sort(byLastDesc);
+    yLabel = '시작=100';
+    fmtPrice = v => v.toFixed(1);
+    titleSuffix = ' · 시작=100';
+  } else if (m2 > 0) {
     for (const ds of [...ds1, ...ds2]) {
       ds.data = ds.data.map(p => ({ x: p.x, y: p.y * m2 / 10000 })); // 억
     }
     yLabel = '억';
-    fmtPrice = v => v.toFixed(1) + '억';
+    fmtPrice = v => v.toFixed(2) + '억';
     // Show both m² and rough 평 equivalent in title (1평 ≈ 3.3058 m²)
     const py = (m2 / 3.3058);
     const pyStr = (py >= 10 ? py.toFixed(0) : py.toFixed(1)) + '평';
     titleSuffix = ` · ${m2}m² (${pyStr}) 총가`;
   } else {
     yLabel = '만원/m²';
-    fmtPrice = v => v.toFixed(0);
+    fmtPrice = v => v.toFixed(2);
     titleSuffix = ' (만원/m²)';
   }
   const fmtRatio = v => v.toFixed(2);
-  const fmtCount = v => v.toFixed(0) + '호';
+  const fmtCount = reBase ? (v => v.toFixed(1)) : (v => v.toFixed(0) + '호');
 
   // Update chart titles with 평수 context
   const t1 = document.querySelector('#chartHolder .chart-box:nth-child(1) .chart-title');
@@ -1469,7 +1490,7 @@ function scheduleRedraw() {
   });
   el.addEventListener('change', scheduleRedraw); // fires on blur when value changed
 });
-['#xLog', '#yLog'].forEach(sel => {
+['#xLog', '#yLog', '#reBase100'].forEach(sel => {
   const el = $(sel); if (el) el.addEventListener('change', scheduleRedraw);
 });
 
